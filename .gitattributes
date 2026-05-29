@@ -12,3 +12,8 @@
 *.ts text eol=lf
 *.js text eol=lf
 *.json text eol=lf
+
+# Generated content (synced from zeltser.com via scripts/sync-report-guidance.ts).
+# linguist-generated collapses it in GitHub diffs but keeps it expandable/diffable —
+# do NOT add -diff: the content ships to npm and must stay reviewable for tampering.
+src/report/content.generated.ts linguist-generated=true

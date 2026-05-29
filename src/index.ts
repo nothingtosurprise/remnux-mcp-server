@@ -21,6 +21,8 @@ import {
   extractIOCsSchema,
   checkToolsSchema,
   getToolHelpSchema,
+  getReportTemplateSchema,
+  getReportGuidanceSchema,
 } from "./schemas/tools.js";
 import { SessionState, DEFAULT_ARCHIVE_PASSWORD } from "./state/session.js";
 import type { HandlerDeps } from "./handlers/types.js";
@@ -36,7 +38,9 @@ import { handleExtractIOCs } from "./handlers/extract-iocs.js";
 import { handleCheckTools } from "./handlers/check-tools.js";
 import { handleSuggestTools } from "./handlers/suggest-tools.js";
 import { handleGetToolHelp } from "./handlers/get-tool-help.js";
+import { handleGetReportTemplate, handleGetReportGuidance } from "./handlers/report.js";
 import { toolRegistry } from "./tools/registry.js";
+import { REPORT_TEMPLATE, GUIDELINES_DIGEST, ATTRIBUTION, SOURCE_META } from "./report/content.generated.js";
 
 export interface ServerConfig extends ConnectorConfig {
   samplesDir: string;
@@ -234,6 +238,27 @@ export async function createServer(config: ServerConfig) {
     () => handleCheckTools(deps)
   );
 
+  // Tool: get_report_template - Bundled malware analysis report template (offline)
+  server.tool(
+    "get_report_template",
+    "Get a malware analysis report template (Markdown) bundled locally for offline use. " +
+    "Created by Lenny Zeltser, licensed CC BY 4.0. Use it to structure a report after analyzing a sample. " +
+    "For interactive review/scoring or the latest version, the zeltser-website MCP server's malware_get_template offers more when connected.",
+    getReportTemplateSchema.shape,
+    () => handleGetReportTemplate(deps)
+  );
+
+  // Tool: get_report_guidance - Bundled malware analysis report writing guidelines (offline)
+  server.tool(
+    "get_report_guidance",
+    "Get malware analysis report writing guidelines bundled locally for offline use — report sections, " +
+    "required fields, the MBC capability model, ICD-203 confidence, Pyramid-of-Pain IOC tiering, anti-patterns, " +
+    "and review criteria. Use `topic` to narrow the full digest. For interactive review or numeric scoring, " +
+    "the zeltser-website MCP server's malware_review_report / rating_score_writing offer more when connected.",
+    getReportGuidanceSchema.shape,
+    (args) => handleGetReportGuidance(deps, args)
+  );
+
   // ── MCP Resources: Tool Registry ──────────────────────────────────────────
 
   // Static resource: all tools
@@ -330,6 +355,38 @@ export async function createServer(config: ServerConfig) {
         }],
       };
     },
+  );
+
+  // ── MCP Resources: Report template + guidelines (bundled, offline) ─────────
+
+  server.resource(
+    "report-template",
+    "remnux://report/template",
+    { description: "Malware analysis report template (Markdown, CC BY 4.0, by Lenny Zeltser)" },
+    () => ({
+      contents: [{
+        uri: "remnux://report/template",
+        mimeType: "text/markdown",
+        text: REPORT_TEMPLATE,
+      }],
+    }),
+  );
+
+  server.resource(
+    "report-guidelines",
+    "remnux://report/guidelines",
+    { description: "Malware analysis report writing guidelines digest (© Lenny Zeltser)" },
+    () => ({
+      contents: [{
+        uri: "remnux://report/guidelines",
+        mimeType: "application/json",
+        text: JSON.stringify(
+          { guidelines: GUIDELINES_DIGEST, attribution: ATTRIBUTION, source: SOURCE_META },
+          null,
+          2,
+        ),
+      }],
+    }),
   );
 
   return server;

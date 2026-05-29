@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleAnalyzeFile } from "../analyze-file.js";
+import { handleAnalyzeFile, generateNextSteps } from "../analyze-file.js";
 import { createMockDeps, ok, parseEnvelope } from "./helpers.js";
 
 describe("handleAnalyzeFile", () => {
@@ -154,5 +154,31 @@ describe("handleAnalyzeFile", () => {
       ["test", "-f", "/samples/test.exe"],
       { timeout: 5000 },
     );
+  });
+});
+
+describe("generateNextSteps report pointer", () => {
+  const POINTER = "Draft a report:";
+
+  it("omits the pointer when there are no substantive results", () => {
+    const steps = generateNextSteps("PE", "standard", [], [], 0);
+    expect(steps.some((s) => s.startsWith(POINTER))).toBe(false);
+    expect(steps.length).toBeLessThanOrEqual(5);
+  });
+
+  it("includes the pointer when IOCs were found", () => {
+    const steps = generateNextSteps("PE", "standard", [], [], 1);
+    expect(steps.some((s) => s.startsWith(POINTER))).toBe(true);
+  });
+
+  it("keeps the pointer even when base steps are at the cap (regression for truncation bug)", () => {
+    // PE + standard depth + no capa findings (packed) + a not-installed tool + IOCs
+    // yields 6 base steps; the pointer must still survive as the final item.
+    const toolsSkipped = [
+      { name: "peframe", skip_type: "not_installed", reason: "Tool not installed" },
+    ] as unknown as Parameters<typeof generateNextSteps>[3];
+    const steps = generateNextSteps("PE", "standard", [], toolsSkipped, 1);
+    expect(steps.some((s) => s.startsWith(POINTER))).toBe(true);
+    expect(steps[steps.length - 1].startsWith(POINTER)).toBe(true);
   });
 });

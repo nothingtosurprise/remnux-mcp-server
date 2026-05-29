@@ -96,3 +96,26 @@ export const extractIOCsSchema = z.object({
   include_private_ips: z.boolean().optional().default(false).describe("Include private/internal IP addresses (10.x, 172.16-31.x, 192.168.x)"),
 });
 export type ExtractIOCsArgs = z.infer<typeof extractIOCsSchema>;
+
+export const getReportTemplateSchema = z.object({});
+export type GetReportTemplateArgs = z.infer<typeof getReportTemplateSchema>;
+
+export const getReportGuidanceSchema = z.object({
+  topic: z.enum([
+    "all",
+    "sections",
+    "confidence",
+    "capabilities",
+    "pyramid_of_pain",
+    "anti_patterns",
+    "review",
+    "writing",
+    "frameworks",
+    "profiles",
+  ]).optional().default("all").describe(
+    "Which slice of the writing guidelines to return. 'all' (default) returns the full digest; " +
+    "narrow to 'sections', 'confidence', 'capabilities', 'pyramid_of_pain', 'anti_patterns', " +
+    "'review', 'writing', 'frameworks', or 'profiles' to reduce size."
+  ),
+});
+export type GetReportGuidanceArgs = z.input<typeof getReportGuidanceSchema>;

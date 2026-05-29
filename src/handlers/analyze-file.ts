@@ -42,7 +42,7 @@ interface ToolSkipped {
 }
 
 /** Generate suggested next steps based on file category and analysis results */
-function generateNextSteps(
+export function generateNextSteps(
   category: string,
   depth: DepthTier,
   toolsRun: ToolRun[],
@@ -109,6 +109,18 @@ function generateNextSteps(
   const notInstalled = toolsSkipped.filter(t => t.skip_type === "not_installed");
   if (notInstalled.length > 0) {
     steps.push(`${notInstalled.length} tool(s) not installed — run check_tools to see installation status`);
+  }
+
+  // Report-drafting pointer — only when the analysis produced something worth reporting,
+  // so empty triage runs stay quiet. Cap the base steps to 5 FIRST, then append the
+  // pointer, so it can never be truncated away in the very case it's meant to fire
+  // (a busy PE run can otherwise accumulate 6 base steps and evict the pointer).
+  const hasSubstantiveResults =
+    iocCount > 0 || toolsRun.some(t => t.findings && t.findings.length > 0);
+  if (hasSubstantiveResults) {
+    const reportPointer =
+      "Draft a report: get_report_template and get_report_guidance provide a bundled report template and writing guidelines (offline).";
+    return [...steps.slice(0, 5), reportPointer];
   }
 
   return steps.slice(0, 5); // Limit to 5 most relevant suggestions

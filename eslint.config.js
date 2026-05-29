@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/"] },
+  { ignores: ["dist/", "src/report/content.generated.ts"] },
   ...tseslint.configs.recommended,
   {
     rules: {

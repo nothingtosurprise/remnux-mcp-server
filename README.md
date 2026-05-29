@@ -251,6 +251,8 @@ claude mcp add remnux --transport http http://REMNUX_IP:3000/mcp \
 | `suggest_tools` | Detect file type and return recommended tools with analysis hints (no execution) |
 | `get_tool_help` | Get usage help (`--help` output) for any installed REMnux tool |
 | `check_tools` | Check which REMnux analysis tools are installed and available |
+| `get_report_template` | Return a bundled malware analysis report template (CC BY 4.0, by Lenny Zeltser) for drafting a report offline |
+| `get_report_guidance` | Return bundled report writing guidelines (sections, confidence, capabilities, IOC tiering, anti-patterns); `topic` narrows the digest |
 
 ### Key Behaviors
 
@@ -294,6 +296,12 @@ claude mcp add remnux --transport http http://REMNUX_IP:3000/mcp \
   "depth": "quick"
 }
 ```
+
+### Generating a Malware Analysis Report
+
+After an analysis, `get_report_template` returns a malware analysis report template and `get_report_guidance` returns accompanying writing guidelines — report sections, required fields, the MBC capability model, ICD-203 confidence, Pyramid-of-Pain IOC tiering, anti-patterns, and review criteria (pass a `topic` to narrow the digest). Both are bundled with the server, so the AI can draft a structured report from the analysis findings without network access — useful in air-gapped or offline analysis environments. The template is also exposed as the `remnux://report/template` resource.
+
+The bundled content is a local snapshot. When you have network access and want interactive review, scoring, or the most current version, the [zeltser-website MCP server](https://zeltser.com/malware-analysis-report) exposes richer tools — `malware_get_template`, `malware_get_guidelines`, `malware_review_report`, and `rating_score_writing` — and the article [Writing a Malware Analysis Report](https://zeltser.com/malware-analysis-report) covers the same material. The bundled tools work on their own; these are optional enrichment, mirroring how the REMnux docs MCP server complements the built-in tool documentation.
 
 ## Security Model
 
@@ -417,6 +425,12 @@ pnpm test
 # Lint
 pnpm run lint
 
+# Re-sync the bundled report template + guidelines from zeltser.com
+# (maintainer task; commit the regenerated src/report/content.generated.ts)
+pnpm run sync:report-guidance
+# Verify the committed copy matches the canonical source without writing
+pnpm run sync:report-guidance --check
+
 # SSH smoke test (against a real VM)
 SSH_SMOKE_HOST=YOUR_VM_IP SSH_SMOKE_USER=remnux SSH_SMOKE_PASSWORD=YOUR_PASSWORD \
   pnpm exec vitest run src/__tests__/ssh-smoke.test.ts
@@ -471,6 +485,12 @@ Analysis tools flag capabilities that appear in both malware and legitimate soft
 
 To counteract this confirmation bias, the server uses neutral language ("notable" instead of "suspicious") in parser findings and tool descriptions, and includes `analysis_guidance` in `analyze_file` responses that prompts the AI to consider benign explanations and state its confidence level. The underlying detection logic is unchanged — only the framing.
 
+### Why bundle a report template?
+
+Analysis produces findings; a report turns them into something a reader can act on. Bundling Lenny Zeltser's malware analysis report template and writing guidelines locally (via `get_report_template` and `get_report_guidance`) lets the AI draft that report in the same offline, container-isolated workflow it uses for analysis — no network call, no dependency on an external service, consistent with this server's "works offline" stance.
+
+The bundled copy is a point-in-time snapshot, refreshed from the canonical public source via `pnpm run sync:report-guidance`. The continuously updated source is the [zeltser-website MCP server](https://zeltser.com/malware-analysis-report) and the article [Writing a Malware Analysis Report](https://zeltser.com/malware-analysis-report), which also offer interactive review and scoring; `analyze_file` points there as optional enrichment when online. Both report tools return only static bundled text — they never read sample content or tool output, so they add no new prompt-injection surface.
+
 ## Related Projects
 
 - [REMnux](https://remnux.org) - Linux toolkit for malware analysis
@@ -479,4 +499,6 @@ To counteract this confirmation bias, the server uses neutral language ("notable
 
 ## License
 
-GPL-3.0 — see [LICENSE](LICENSE)
+GPL-3.0-only — see [LICENSE](LICENSE).
+
+The bundled malware analysis report template (returned by `get_report_template`) is licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); the accompanying writing guidelines (returned by `get_report_guidance`) are © Lenny Zeltser. Both are by [Lenny Zeltser](https://zeltser.com/malware-analysis-report) and retain their own licenses with attribution; the rest of the package is GPL-3.0-only.
