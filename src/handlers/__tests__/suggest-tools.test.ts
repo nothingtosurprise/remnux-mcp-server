@@ -88,11 +88,13 @@ describe("handleSuggestTools", () => {
     expect(env.data.additional_tools).toBeDefined();
     expect(Array.isArray(env.data.additional_tools)).toBe(true);
     {
-      // Each entry should have required fields
+      // Each entry is a discovery pointer (name + description + website), NOT a
+      // runnable command — the misleading `command` slug must be gone.
       for (const tool of env.data.additional_tools) {
-        expect(tool).toHaveProperty("command");
         expect(tool).toHaveProperty("name");
         expect(tool).toHaveProperty("description");
+        expect(tool).toHaveProperty("website");
+        expect(tool).not.toHaveProperty("command");
       }
     }
   });
@@ -112,7 +114,12 @@ describe("handleSuggestTools", () => {
     const registryCommands = new Set(
       toolRegistry.byTagAndTier("pe", "standard").map((t) => normalize(t.command))
     );
-    const additionalCommands = (env.data.additional_tools ?? []).map((t: { command: string }) => t.command);
+    // additional_tools no longer surface `command`; map the surfaced display
+    // name back to its catalog command to assert the dedup invariant.
+    const nameToCommand = new Map(toolCatalog.all().map((c) => [c.name, c.command] as [string, string]));
+    const additionalCommands = (env.data.additional_tools ?? [])
+      .map((t: { name: string }) => nameToCommand.get(t.name))
+      .filter((c: string | undefined): c is string => typeof c === "string");
 
     // No normalized overlap between registry commands and additional_tools
     for (const cmd of additionalCommands) {
@@ -122,74 +129,68 @@ describe("handleSuggestTools", () => {
 
   it("excludes catalog entries aliased to registry tools", async () => {
     const deps = createMockDeps();
+    // additional_tools surface the display `name`, not the catalog `command`
+    // slug — map slug → name so the exclusion assertions stay meaningful.
+    const commandToName = new Map(toolCatalog.all().map((c) => [c.command, c.name] as [string, string]));
+    const surfaces = (
+      env: { data?: { additional_tools?: Array<{ name: string }> } },
+      slug: string,
+    ): boolean => {
+      const name = commandToName.get(slug);
+      const names = new Set((env.data?.additional_tools ?? []).map((t) => t.name));
+      return name !== undefined && names.has(name);
+    };
 
-    // PE file — readpe-formerly-pev should be excluded (aliased to pescan/pestr)
+    // PE — readpe-formerly-pev excluded (aliased to pescan/pestr)
     vi.mocked(deps.connector.execute).mockResolvedValue(
       ok("/samples/test.exe: PE32 executable (GUI) Intel 80386")
     );
-    const pe = await handleSuggestTools(deps, { file: "test.exe" });
-    const peEnv = parseEnvelope(pe);
-    const peAdditional = (peEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    // Precondition: catalog must contain the aliased tool for the negative assertion to be meaningful
-    const peCatalog = toolCatalog.forMcpCategory("PE").map((t) => t.command);
-    expect(peCatalog).toContain("readpe-formerly-pev");
-    expect(peAdditional).not.toContain("readpe-formerly-pev");
+    const peEnv = parseEnvelope(await handleSuggestTools(deps, { file: "test.exe" }));
+    expect(toolCatalog.forMcpCategory("PE").map((t) => t.command)).toContain("readpe-formerly-pev");
+    expect(surfaces(peEnv, "readpe-formerly-pev")).toBe(false);
 
-    // PDF file — origamindee, pdftk-java should be excluded at standard depth;
-    // peepdf-3 should be excluded at deep depth (where peepdf enters the registry)
+    // PDF — origamindee, pdftk-java excluded at standard depth
     vi.mocked(deps.connector.execute).mockResolvedValue(
       ok("/samples/doc.pdf: PDF document, version 1.4")
     );
-    const pdf = await handleSuggestTools(deps, { file: "doc.pdf" });
-    const pdfEnv = parseEnvelope(pdf);
-    const pdfAdditional = (pdfEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    // Precondition: catalog must contain the aliased tools
+    const pdfEnv = parseEnvelope(await handleSuggestTools(deps, { file: "doc.pdf" }));
     const pdfCatalog = toolCatalog.forMcpCategory("PDF").map((t) => t.command);
     expect(pdfCatalog).toContain("origamindee");
     expect(pdfCatalog).toContain("pdftk-java");
-    expect(pdfAdditional).not.toContain("origamindee");
-    expect(pdfAdditional).not.toContain("pdftk-java");
-    // peepdf-3 should still appear at standard depth (peepdf is deep-tier only)
-    expect(pdfAdditional).toContain("peepdf-3");
+    expect(surfaces(pdfEnv, "origamindee")).toBe(false);
+    expect(surfaces(pdfEnv, "pdftk-java")).toBe(false);
+    // peepdf-3 still appears at standard depth (peepdf is deep-tier only)
+    expect(surfaces(pdfEnv, "peepdf-3")).toBe(true);
 
-    // At deep depth, peepdf enters registry so peepdf-3 alias kicks in
-    const pdfDeep = await handleSuggestTools(deps, { file: "doc.pdf", depth: "deep" });
-    const pdfDeepEnv = parseEnvelope(pdfDeep);
-    const pdfDeepAdditional = (pdfDeepEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    expect(pdfDeepAdditional).not.toContain("peepdf-3");
+    // At deep depth, peepdf enters the registry so the peepdf-3 alias is hidden
+    const pdfDeepEnv = parseEnvelope(await handleSuggestTools(deps, { file: "doc.pdf", depth: "deep" }));
+    expect(surfaces(pdfDeepEnv, "peepdf-3")).toBe(false);
 
-    // OLE2 file — oletools, xlmmacrodeobfuscator should be excluded
+    // OLE2 — oletools, xlmmacrodeobfuscator excluded
     vi.mocked(deps.connector.execute).mockResolvedValue(
       ok("/samples/doc.doc: Composite Document File V2 Document")
     );
-    const ole = await handleSuggestTools(deps, { file: "doc.doc" });
-    const oleEnv = parseEnvelope(ole);
-    const oleAdditional = (oleEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    // Precondition: catalog must contain the aliased tools
+    const oleEnv = parseEnvelope(await handleSuggestTools(deps, { file: "doc.doc" }));
     const oleCatalog = toolCatalog.forMcpCategory("OLE2").map((t) => t.command);
     expect(oleCatalog).toContain("oletools");
     expect(oleCatalog).toContain("xlmmacrodeobfuscator");
-    expect(oleAdditional).not.toContain("oletools");
-    expect(oleAdditional).not.toContain("xlmmacrodeobfuscator");
+    expect(surfaces(oleEnv, "oletools")).toBe(false);
+    expect(surfaces(oleEnv, "xlmmacrodeobfuscator")).toBe(false);
 
-    // Python file — decompyle and pyinstaller-extractor should be excluded (aliased)
+    // Python — decompyle, pyinstaller-extractor excluded (aliased)
     vi.mocked(deps.connector.execute).mockResolvedValue(
       ok("/samples/test.pyc: python 3.9 byte-compiled")
     );
-    const py = await handleSuggestTools(deps, { file: "test.pyc" });
-    const pyEnv = parseEnvelope(py);
-    const pyAdditional = (pyEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    expect(pyAdditional).not.toContain("decompyle");
-    expect(pyAdditional).not.toContain("pyinstaller-extractor");
+    const pyEnv = parseEnvelope(await handleSuggestTools(deps, { file: "test.pyc" }));
+    expect(surfaces(pyEnv, "decompyle")).toBe(false);
+    expect(surfaces(pyEnv, "pyinstaller-extractor")).toBe(false);
 
-    // DOTNET file — ilspy should be excluded (aliased to ilspycmd)
+    // DOTNET — ilspy excluded (aliased to ilspycmd)
     vi.mocked(deps.connector.execute).mockResolvedValue(
       ok("/samples/test.exe: PE32 executable (console) Intel 80386 Mono/.Net assembly")
     );
-    const dotnet = await handleSuggestTools(deps, { file: "test.exe" });
-    const dotnetEnv = parseEnvelope(dotnet);
-    const dotnetAdditional = (dotnetEnv.data.additional_tools ?? []).map((t: { command: string }) => t.command);
-    expect(dotnetAdditional).not.toContain("ilspy");
+    const dotnetEnv = parseEnvelope(await handleSuggestTools(deps, { file: "test.exe" }));
+    expect(surfaces(dotnetEnv, "ilspy")).toBe(false);
   });
 
   it("has no duplicates within additional_tools", async () => {
@@ -202,8 +203,8 @@ describe("handleSuggestTools", () => {
     const env = parseEnvelope(result);
     if (!env.data.additional_tools) return;
 
-    const commands = env.data.additional_tools.map((t: { command: string }) => t.command);
-    expect(commands.length).toBe(new Set(commands).size);
+    const names = env.data.additional_tools.map((t: { name: string }) => t.name);
+    expect(names.length).toBe(new Set(names).size);
   });
 
   it("omits additional_tools when catalog has no extras", async () => {

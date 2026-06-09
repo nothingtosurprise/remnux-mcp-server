@@ -317,7 +317,7 @@ export async function handleSuggestTools(
   }));
 
   // Query catalog for additional tools not in the registry
-  let additionalTools: Array<{ command: string; name: string; description: string; website: string }> = [];
+  let additionalTools: Array<{ name: string; description: string; website: string }> = [];
   try {
     const normalize = (c: string) => c.replace(/\.py$/, '');
     const registryCommands = new Set(tools.map((t) => normalize(t.command)));
@@ -343,7 +343,6 @@ export async function handleSuggestTools(
         return true;
       })
       .map((ct) => ({
-        command: ct.command,
         name: ct.name,
         description: ct.description,
         website: ct.website,
@@ -369,8 +368,9 @@ export async function handleSuggestTools(
     ...(additionalTools.length > 0 && {
       additional_tools: additionalTools,
       additional_tools_note:
-        "Additional tools available on REMnux for this file type. " +
-        "Not auto-run by analyze_file. Use run_tool to invoke manually.",
+        "Other tools installed on REMnux for this file type, beyond those analyze_file auto-runs. " +
+        "These are discovery pointers (name, purpose, docs link) — not runnable commands. " +
+        "To use one, get its exact command from the linked docs, then run_tool it.",
     }),
   }, startTime);
   } catch (error) {
