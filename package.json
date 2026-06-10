@@ -35,6 +35,7 @@
     "dist/",
     "!dist/__tests__/",
     "!dist/**/__tests__/",
+    "data/tools-index.json",
     "README.md",
     "LICENSE"
   ],
