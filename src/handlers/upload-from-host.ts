@@ -36,6 +36,11 @@ export async function handleUploadFromHost(
     ), startTime);
   }
 
+  // Opt-in confinement: only when --sandbox is enabled (config.noSandbox === false).
+  // Defaults to samplesDir; docker/ssh deployments set --ingest-root to a host-side dir
+  // (enforced at startup so this default is never silently wrong there).
+  const ingestRoot = config.noSandbox ? undefined : (config.ingestRoot ?? config.samplesDir);
+
   try {
     const result = await uploadSampleFromHost(
       connector,
@@ -44,6 +49,7 @@ export async function handleUploadFromHost(
       args.filename,
       args.overwrite,
       config.mode,
+      ingestRoot,
     );
 
     if (result.success) {

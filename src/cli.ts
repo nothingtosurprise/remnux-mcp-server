@@ -76,6 +76,10 @@ function parseArgs(): ServerConfig {
         config.outputDir = value;
         consumeValue();
         break;
+      case "--ingest-root":
+        config.ingestRoot = value;
+        consumeValue();
+        break;
       case "--timeout":
         config.timeout = parseIntOrExit(value, "--timeout");
         consumeValue();
@@ -147,6 +151,8 @@ OPTIONS:
   --timeout <seconds>     Default command timeout (default: 300)
   --sandbox               Enable path sandboxing (restrict files to samples/output dirs)
   --no-sandbox            No-op (sandbox is already off by default)
+  --ingest-root <path>    With --sandbox, confine upload_from_host source reads to this
+                          directory (defaults to samples dir; required in docker/ssh mode)
   --transport <mode>      Transport: stdio (default) or http
   --http-port <port>      HTTP port (default: 3000)
   --http-host <host>      HTTP bind address (default: 127.0.0.1)

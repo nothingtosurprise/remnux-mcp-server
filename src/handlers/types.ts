@@ -8,6 +8,7 @@ export interface HandlerConfig {
   noSandbox: boolean;
   mode: "docker" | "ssh" | "local";
   transport?: "stdio" | "http";
+  ingestRoot?: string;
 }
 
 export interface HandlerDeps {

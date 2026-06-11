@@ -63,6 +63,7 @@ describe("handleUploadFromHost", () => {
       undefined,
       true,
       "docker",
+      "/samples", // sandbox on by default in mock → confine to samplesDir
     );
   });
 
@@ -88,6 +89,51 @@ describe("handleUploadFromHost", () => {
       "renamed.exe",
       false,
       "docker",
+      "/samples", // sandbox on by default in mock → confine to samplesDir
+    );
+  });
+
+  it("passes ingestRoot=undefined when sandbox is disabled (noSandbox)", async () => {
+    const deps = createMockDeps({ noSandbox: true });
+    vi.mocked(uploadSampleFromHost).mockResolvedValue({
+      success: true,
+      path: "/samples/test.exe",
+      sha256: "abc",
+      size_bytes: 100,
+    });
+
+    await handleUploadFromHost(deps, { host_path: "/tmp/test.exe", overwrite: false });
+
+    expect(uploadSampleFromHost).toHaveBeenCalledWith(
+      deps.connector,
+      "/samples",
+      "/tmp/test.exe",
+      undefined,
+      false,
+      "docker",
+      undefined, // no confinement when sandbox is off
+    );
+  });
+
+  it("confines to --ingest-root when sandbox is enabled", async () => {
+    const deps = createMockDeps({ noSandbox: false, ingestRoot: "/srv/ingest" });
+    vi.mocked(uploadSampleFromHost).mockResolvedValue({
+      success: true,
+      path: "/samples/test.exe",
+      sha256: "abc",
+      size_bytes: 100,
+    });
+
+    await handleUploadFromHost(deps, { host_path: "/srv/ingest/test.exe", overwrite: false });
+
+    expect(uploadSampleFromHost).toHaveBeenCalledWith(
+      deps.connector,
+      "/samples",
+      "/srv/ingest/test.exe",
+      undefined,
+      false,
+      "docker",
+      "/srv/ingest", // explicit ingest root takes precedence over samplesDir
     );
   });
 

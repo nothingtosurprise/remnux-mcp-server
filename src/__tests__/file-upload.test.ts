@@ -2,8 +2,11 @@
  * Tests for file-upload module
  */
 
-import { describe, it, expect } from "vitest";
-import { validateFilename, validateHostPath } from "../file-upload.js";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { confineHostPath, validateFilename, validateHostPath } from "../file-upload.js";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 describe("validateFilename", () => {
   describe("valid filenames", () => {
@@ -156,5 +159,62 @@ describe("validateHostPath", () => {
     for (const p of cases) {
       expect(validateHostPath(p).valid).toBe(false);
     }
+  });
+});
+
+describe("confineHostPath", () => {
+  let root: string;
+  let outside: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "remnux-ingest-"));
+    outside = mkdtempSync(join(tmpdir(), "remnux-outside-"));
+    writeFileSync(join(root, "sample.exe"), "data");
+    mkdirSync(join(root, "sub"));
+    writeFileSync(join(root, "sub", "nested.bin"), "data");
+    writeFileSync(join(outside, "secret.txt"), "secret");
+    // root/escape is a symlink to the outside directory
+    symlinkSync(outside, join(root, "escape"));
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+
+  it("accepts a file directly inside the ingest root and returns its realPath", () => {
+    const result = confineHostPath(join(root, "sample.exe"), root);
+    expect(result.valid).toBe(true);
+    expect(result.realPath).toBeDefined();
+  });
+
+  it("accepts a file in a subdirectory of the root", () => {
+    expect(confineHostPath(join(root, "sub", "nested.bin"), root).valid).toBe(true);
+  });
+
+  it("rejects a file outside the ingest root", () => {
+    const result = confineHostPath(join(outside, "secret.txt"), root);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("escapes");
+  });
+
+  it("rejects a symlinked-parent escape out of the root", () => {
+    // The final component is a regular file, but its parent (root/escape) is a symlink
+    // pointing outside the root — realpath resolution must detect the escape.
+    const result = confineHostPath(join(root, "escape", "secret.txt"), root);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("escapes");
+  });
+
+  it("rejects a nonexistent source (cannot be resolved)", () => {
+    const result = confineHostPath(join(root, "does-not-exist.bin"), root);
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("host_path could not be resolved");
+  });
+
+  it("rejects when the ingest root itself cannot be resolved", () => {
+    const result = confineHostPath(join(root, "sample.exe"), join(root, "no-such-root"));
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain("ingest root could not be resolved");
   });
 });

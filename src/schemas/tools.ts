@@ -25,7 +25,7 @@ export const extractArchiveSchema = z.object({
 export type ExtractArchiveArgs = z.infer<typeof extractArchiveSchema>;
 
 export const uploadFromHostSchema = z.object({
-  host_path: z.string().describe("Absolute path to the file on the machine where the MCP server runs (not the remote client in HTTP deployments)"),
+  host_path: z.string().describe("Absolute path to the file on the machine where the MCP server runs (not the remote client in HTTP deployments). When the server is started with --sandbox, the resolved path must reside inside the configured --ingest-root (defaults to the samples directory)."),
   filename: z.string().optional().describe("Override filename in samples dir (defaults to basename of host_path)"),
   overwrite: z.boolean().optional().default(false).describe("Whether to overwrite if file exists. Default: false"),
 });

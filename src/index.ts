@@ -47,6 +47,7 @@ export interface ServerConfig extends ConnectorConfig {
   outputDir: string;
   timeout: number;
   noSandbox?: boolean;
+  ingestRoot?: string;
   transport?: "stdio" | "http";
   httpPort?: number;
   httpHost?: string;
@@ -92,6 +93,7 @@ export async function createServer(config: ServerConfig) {
       noSandbox: config.noSandbox ?? false,
       mode: config.mode,
       transport: config.transport,
+      ingestRoot: config.ingestRoot,
     },
     sessionState,
   };
@@ -395,6 +397,18 @@ export async function createServer(config: ServerConfig) {
 export async function startServer(config: ServerConfig) {
   const transportMode = config.transport ?? "stdio";
 
+  // Fail closed: --sandbox confinement in docker/ssh mode reads from the host where the
+  // server runs, but samplesDir is the REMnux-side path and is meaningless there. Require
+  // an explicit --ingest-root rather than silently confining to a path that rejects uploads.
+  const sandboxOn = !(config.noSandbox ?? false);
+  if (sandboxOn && (config.mode === "docker" || config.mode === "ssh") && !config.ingestRoot) {
+    console.error(
+      `Error: --sandbox in ${config.mode} mode requires --ingest-root=<host directory> to ` +
+      "confine upload_from_host reads (the samples directory is inside REMnux, not on the host).",
+    );
+    process.exit(1);
+  }
+
   if (transportMode === "http") {
     await startHttpServer(config);
   } else {
@@ -412,7 +426,9 @@ export async function startServer(config: ServerConfig) {
     process.on("SIGINT", shutdown);
     process.on("SIGTERM", shutdown);
 
-    const warnings = config.noSandbox ? " (WARNING: sandbox disabled)" : "";
+    const warnings = sandboxOn
+      ? ` (upload_from_host confined to ${config.ingestRoot ?? config.samplesDir})`
+      : " (WARNING: sandbox disabled)";
     console.error(`REMnux MCP server started${warnings}`);
   }
 }
@@ -515,7 +531,9 @@ async function startHttpServer(config: ServerConfig) {
     }
   });
 
-  const warnings = config.noSandbox ? " (WARNING: sandbox disabled)" : "";
+  const warnings = !(config.noSandbox ?? false)
+    ? ` (upload_from_host confined to ${config.ingestRoot ?? config.samplesDir})`
+    : " (WARNING: sandbox disabled)";
   const authStatus = token ? "auth enabled" : "NO AUTH";
 
   return new Promise<void>((resolve) => {

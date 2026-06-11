@@ -6,9 +6,9 @@
  */
 
 import { createHash } from "crypto";
-import { createReadStream, lstatSync } from "fs";
+import { createReadStream, lstatSync, realpathSync } from "fs";
 import { pipeline } from "stream/promises";
-import { basename, isAbsolute } from "path";
+import { basename, isAbsolute, relative, resolve, sep } from "path";
 import type { Connector } from "./connectors/index.js";
 
 // 200MB limit for uploaded files (stat-based check, no in-memory buffering)
@@ -88,6 +88,50 @@ export function validateHostPath(hostPath: string): { valid: boolean; error?: st
 }
 
 /**
+ * Confine a host source path to an allowed ingest root (opt-in, --sandbox only).
+ *
+ * Resolves the real paths of both the root and the candidate so a symlinked parent
+ * directory cannot redirect the read outside the root. Returns the canonical realPath
+ * for the caller to read/copy, so the validated path and the read path are identical
+ * (closes the check-vs-read race).
+ *
+ * @param hostPath - Absolute host path supplied by the caller
+ * @param ingestRoot - Directory the source must reside within
+ * @returns valid flag, error message on failure, and the resolved realPath on success
+ */
+export function confineHostPath(
+  hostPath: string,
+  ingestRoot: string,
+): { valid: boolean; error?: string; realPath?: string } {
+  let root: string;
+  try {
+    root = realpathSync(resolve(ingestRoot));
+  } catch (err) {
+    return {
+      valid: false,
+      error: `ingest root could not be resolved (${ingestRoot}): ${err instanceof Error ? err.message : "unknown error"}`,
+    };
+  }
+
+  let target: string;
+  try {
+    target = realpathSync(resolve(hostPath));
+  } catch (err) {
+    return {
+      valid: false,
+      error: `host_path could not be resolved: ${err instanceof Error ? err.message : "unknown error"}`,
+    };
+  }
+
+  const rel = relative(root, target);
+  if (rel === ".." || rel.startsWith(".." + sep) || isAbsolute(rel)) {
+    return { valid: false, error: `host_path escapes the allowed ingest root (${ingestRoot})` };
+  }
+
+  return { valid: true, realPath: target };
+}
+
+/**
  * Upload a file from the host filesystem to the samples directory
  *
  * @param connector - Connector to write files on REMnux
@@ -95,6 +139,7 @@ export function validateHostPath(hostPath: string): { valid: boolean; error?: st
  * @param hostPath - Absolute path on the host filesystem
  * @param filename - Override filename (defaults to basename of hostPath)
  * @param overwrite - Whether to overwrite if file exists (default: false)
+ * @param ingestRoot - When set (opt-in via --sandbox), confine the source to this root
  * @returns Upload result with file path, size, and SHA256 hash
  */
 export async function uploadSampleFromHost(
@@ -104,6 +149,7 @@ export async function uploadSampleFromHost(
   filename?: string,
   overwrite: boolean = false,
   mode: "docker" | "ssh" | "local" = "docker",
+  ingestRoot?: string,
 ): Promise<UploadResult> {
   // Validate host path
   const pathValidation = validateHostPath(hostPath);
@@ -145,6 +191,17 @@ export async function uploadSampleFromHost(
     };
   }
 
+  // Opt-in confinement (--sandbox): restrict the source to an allowed ingest root.
+  // Resolves symlinks and reads the canonical path so the validated and read paths match.
+  let readPath = hostPath;
+  if (ingestRoot) {
+    const confinement = confineHostPath(hostPath, ingestRoot);
+    if (!confinement.valid) {
+      return { success: false, error: confinement.error };
+    }
+    readPath = confinement.realPath!;
+  }
+
   // Determine target filename
   const targetFilename = filename ?? basename(hostPath);
 
@@ -158,7 +215,7 @@ export async function uploadSampleFromHost(
   let sha256: string;
   try {
     const hash = createHash("sha256");
-    await pipeline(createReadStream(hostPath), hash);
+    await pipeline(createReadStream(readPath), hash);
     sha256 = hash.digest("hex");
   } catch (err) {
     return {
@@ -196,7 +253,7 @@ export async function uploadSampleFromHost(
 
   // Write file using connector's streaming path-based method
   try {
-    await connector.writeFileFromPath(filePath, hostPath);
+    await connector.writeFileFromPath(filePath, readPath);
   } catch (err) {
     return {
       success: false,

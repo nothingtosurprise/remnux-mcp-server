@@ -122,6 +122,16 @@ docker run -d --name remnux remnux/remnux-distro:noble
 claude mcp add remnux -- npx @remnux/mcp-server --mode=docker --container=remnux
 ```
 
+To confine `upload_from_host` to a host-side sample directory (so a prompt-injected client cannot read other files off your workstation), add `--sandbox --ingest-root`:
+
+```bash
+mkdir -p "$HOME/remnux-samples"
+claude mcp add remnux -- npx @remnux/mcp-server --mode=docker --container=remnux \
+  --sandbox --ingest-root="$HOME/remnux-samples"
+```
+
+See [Security Model](#security-model) for the reasoning. This is optional hardening. Without it, `upload_from_host` can read any file your user account can read.
+
 **With a VM (SSH):**
 
 ```bash
@@ -230,6 +240,7 @@ claude mcp add remnux --transport http http://REMNUX_IP:3000/mcp \
 | `--output-dir` | Output directory path inside REMnux | `/home/remnux/files/output` |
 | `--timeout` | Default command timeout in seconds | `300` |
 | `--sandbox` | Enable path sandboxing (restrict files to samples/output dirs) | off |
+| `--ingest-root` | With `--sandbox`, confine `upload_from_host` source reads to this directory (required in docker/ssh mode) | samples dir |
 | `--transport` | Transport mode: `stdio` or `http` | `stdio` |
 | `--http-port` | HTTP server port (for http transport) | `3000` |
 | `--http-host` | HTTP bind address (for http transport) | `127.0.0.1` |
@@ -317,8 +328,11 @@ All three connection modes (docker, ssh, local) execute commands inside a dispos
 | Resource exhaustion (tools hang or consume excessive resources) | AI assistant / analysis session | Timeout enforcement (default 5 min), output budgets (40KB/tool default, 120KB total) |
 | Archive zip-slip (path traversal in archives) | Analysis session | Post-extraction validation rejects path escape attempts |
 | SSH injection | SSH connection | Proper shell escaping using single quotes |
+| Host-side file read via `upload_from_host` (docker/ssh mode) | Analyst's workstation (outside isolation) | Opt-in `--sandbox` confines the source to `--ingest-root` (realpath-resolved). See the disclosure below. |
 
-**Other considerations:** A theoretical TOCTOU race exists between path validation and tool execution; container isolation is the primary mitigation (use immutable sample storage for high-security contexts). Tool description poisoning is mitigated by using build-time constants rather than runtime lookups from external sources.
+**Where `upload_from_host` reads from, and why it matters.** The relevant boundary is **connector mode (`local` vs `docker`/`ssh`), not transport**. In `local` mode (including HTTP transport with the local connector), the AI already has shell-level read on the REMnux box by design: `run_tool` executes arbitrary commands there, so `upload_from_host` reading a file outside the samples directory adds nothing beyond what the model already grants. In `docker`/`ssh` mode, `upload_from_host` is the one tool that reads from the machine where the server runs, the analyst's workstation, via `docker cp` or SFTP. That read happens outside the container/VM isolation that bounds everything else, so a prompt-injected client could stage a host file such as `~/.ssh/id_rsa` or `~/.aws/credentials` into REMnux. Enable `--sandbox` with `--ingest-root=<host staging dir>` to confine that read. In docker/ssh mode, `--ingest-root` is required when `--sandbox` is set, because the samples directory lives inside REMnux rather than on the host.
+
+**Other considerations:** A theoretical TOCTOU race exists between path validation and tool execution; container isolation is the primary mitigation (use immutable sample storage for high-security contexts). The `upload_from_host` confinement closes its own check-vs-read race by reading the realpath it validated. Tool description poisoning is mitigated by using build-time constants rather than runtime lookups from external sources.
 
 **What does NOT need protection (container/VM's job):** REMnux filesystem, packages, services, privileges, network config, devices, mounts, and path traversal inside REMnux — all disposable and container-isolated.
 
