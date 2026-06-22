@@ -535,7 +535,7 @@
       "website": "https://www.gnu.org/software/wget/"
     },
     {
-      "command": "gootloaderautojsdecodepy",
+      "command": "gootloader-decode",
       "name": "GootLoaderAutoJsDecode.py",
       "category": "Statically Analyze Code: Scripts",
       "description": "Statically deobfuscate GootLoader (GOOTLOADER) malicious JScript to recover the payload and extract C2 domains.",
