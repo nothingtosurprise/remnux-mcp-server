@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "updated": "2026-06-22",
+  "updated": "2026-06-23",
   "tools": [
     {
       "command": "1768",
@@ -1037,6 +1037,13 @@
       "category": "Dynamically Reverse-Engineer Code: Scripts",
       "description": "Run PowerShell scripts and commands.",
       "website": "https://github.com/powershell/powershell"
+    },
+    {
+      "command": "procmon-mcp",
+      "name": "ProcmonMCP",
+      "category": "Use Artificial Intelligence",
+      "description": "MCP server that lets AI assistants analyze Process Monitor (Procmon) XML captures.",
+      "website": "https://github.com/JameZUK/ProcmonMCP"
     },
     {
       "command": "procyon",
